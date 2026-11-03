@@ -16,15 +16,14 @@ This project runs on two DAQs: the LabJack T7 Pro, and the NI multifunction I/O 
 We must measure pressure and temperature both inside the cylinder heads and the ambient pressure and temperature.
 
 Inside the cylinder heads:
-- DATAQ pressure transducer
-  - Measures from -14.5 to 15 psi.
-  - Accurate to ±0.5%FS.
-  - https://dataq.com/products/accessories/pressure-sensor/2000361-hs-n1515.html
+- RIFE 200 PSI Pressure Transducer 1/8" NPT
+    
 - Temperature probe:
-  - TBD
+  - Omega 5SRTC-TT-K-40-36 - Insulated Thermocouple, Ready-Made, K Type, 36" Cable, 0 C to 260 C (32 F to 500 F), ANSI (Std), 5SRTC Series
+  - Analog Output K-Type Thermocouple Amplifier
 
   Ambient temperature and pressure:
-  - Also tbd but probably digital over SPI 
+  - Adafruit BMP280 I2C or SPI Barometric Pressure & Altitude Sensor
 
   #### Microcontrollers
-  - Currently we have two Arduino UNOs?
+  - ESP32 Devkit C
