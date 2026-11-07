@@ -10,7 +10,7 @@ from pathvalidate import validate_filename, ValidationError
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
-SERIAL_PORT = '/dev/ttyACM0'
+SERIAL_PORT = '/dev/ttyUSB0'
 BAUD_RATE = 115200
 
 ctk.set_appearance_mode("Dark")
@@ -40,7 +40,7 @@ class App(ctk.CTk):
         header = ctk.CTkFrame(self, height=80, corner_radius=0, fg_color="#14161a")
         header.grid(row=0, column=0, sticky="ew")
         ctk.CTkLabel(header, text="Flowbench",font=ctk.CTkFont(size=28, weight="bold"),).pack(side="left", padx=(30, 12), pady=20)
-        ctk.CTkLabel(header, text="Super Suck time", text_color=MUTED,).pack(side="left", pady=(8, 0))
+        ctk.CTkLabel(header, text="Super Suck Time!!", text_color=MUTED,).pack(side="left", pady=(8, 0))
 
         
         # body
@@ -55,7 +55,7 @@ class App(ctk.CTk):
 
         self.entry = ctk.CTkEntry(
             left, height=45, corner_radius=10,
-            placeholder_text="Enter angle for servo position (0-180)",
+            placeholder_text="Enter desired RPM",
         )
         self.entry.pack(fill="x", padx=24, pady=(16, 10))
         self.entry.bind("<Return>", lambda event: self.send_value())

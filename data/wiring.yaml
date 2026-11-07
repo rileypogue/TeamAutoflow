@@ -1,0 +1,168 @@
+# wiring diagram 
+## Engine test cell wiring - skeleton. 
+
+connectors:
+  PSU:
+    type: Power supply
+    pinlabels: [L, N, V1 +5V, V2 +12V, COM]   # L and N are wall power (not wired here)
+  GNDPT:                    # Star ground point
+    type: Ground star point
+    pinlabels: [PSU COM, T7 GND, NI GND, SENS GND, SERVO GND, SERVO2 GND, ESP32 GND]
+  BUS5V:                    # 5 V sensor bus
+    type: 5 V bus
+    pinlabels: [IN, P1, P2, P3, P4, LM1815, ESP32, NI ai4 sense]
+
+  T7:
+    type: LabJack T7 Pro
+    pinlabels: [AIN0, AIN1, AIN2, AIN3, FIO0, FIO1, FIO2, GND]
+  NI:
+    type: NI USB-6001
+    pinlabels: [ai0, ai1, ai2, ai3, ai4, ai5, GND]
+
+  P1: &pt
+    type: RIFE pressure transducer
+    pinlabels: [+5V, GND, OUT]
+  P2: *pt
+  P3: *pt
+  P4: *pt
+
+  LM1815:                   # 14-pin DIP/SOIC; referenced below by PIN NUMBER 
+    type: LM1815 VR amp
+    pinlabels: [NC, GND, VIN, NC, MODE (open = adaptive), NC, PEAK DET CAP, VCC, TIMING PULSE IN, GATED OUT (do not use), INPUT SELECT, REF PULSE OUT (open coll.), NC, RC TIMING]
+  R_TIMING:                 # pulse = 0.673*R*C. NOTE 100k x 15nF = 1.0 ms, LONGER than the 0.83 ms tooth interval at 6000 RPM x 12 teeth (teeth get swallowed). Aim for ~0.3-0.4 ms.
+    type: Resistor
+    subtype: 100 kOhm
+    pinlabels: [VCC side, pin 14 side]
+  C_TIMING:
+    type: Capacitor
+    subtype: 15 nF
+    pinlabels: [pin 14 side, GND side]
+  C_PEAK:                   # peak-detector capacitor. 
+    type: Capacitor
+    subtype: 0.1 uF
+    pinlabels: [pin 7 side, GND side]
+  C_PEAK2:                   # peak-detector capacitor. 
+    type: Capacitor
+    subtype: 0.22 uF
+    pinlabels: [pin 7 side, GND side]
+  R_PEAK:                   # peak-detector resistor
+    type: Resistor 
+    subtype: 1.5 MOhm 
+    pinlabels: [pin 7 side, GND side]
+  CKP:
+    type: CKP sensor (VR)
+    pinlabels: [+, -]
+  R_PULLUP:                 # <- resistor value goes in type/subtype
+    type: Resistor
+    subtype: 4.7 kOhm pull-up
+    pinlabels: [3V3 side, OUT side]
+
+  ESP32:
+    type: ESP32 DevKitC
+    pinlabels: [3V3, 5V, GND, GPIO 4 (CKP in), GPIO 21 (throttle servo PWM), GPIO 22 (clutch servo PWM), GPIO 25 (START button), GPIO 26 (E-STOP sense)]
+  SERVO:
+    type: ZOSKAY 25 kg digital servo (throttle)
+    pinlabels: [V+, GND, SIGNAL]
+  SERVO2:
+    type: RDS51150 digital servo (clutch)    # TODO: check voltage + stall current on its datasheet
+    pinlabels: [V+, GND, SIGNAL]
+  SERVOPWR:                 # servo supply branch: fuse + bulk capacitor go here. TODO: right voltage per servo datasheets
+    type: Servo power branch (separate from sensor 5 V)
+    pinlabels: [IN, SERVO V+, SERVO2 V+]
+  START:                    # normally-open pushbutton, ESP32 reads it with INPUT_PULLUP (pressed = LOW)
+    type: START pushbutton (NO)
+    pinlabels: [contact A, contact B]
+  ESTOP:                    # mushroom E-stop. Needs TWO contact blocks: NC in the servo power path + one for ESP32 sensing. TODO: part
+    type: E-STOP (NC power contact + sense contact)
+    pinlabels: [PWR IN, PWR OUT, SENSE A, SENSE B]
+
+cables:
+  W_PWR: {wirecount: 1}
+  W_GND_PSU: {wirecount: 1}
+  W_GND_T7: {wirecount: 1}
+  W_GND_NI: {wirecount: 1}
+  W_GND_ESP: {wirecount: 1}
+  W_GND_SERVO: {wirecount: 1}
+  W_SENSE: {wirecount: 1}
+  W_SYNC: {wirecount: 2}
+  W_LM: {wirecount: 2}
+  W_RT: {wirecount: 2}
+  W_CT: {wirecount: 2}
+  W_CP: {wirecount: 2}
+  W_TIE9: {wirecount: 1}
+  W_TIE11: {wirecount: 1}
+  W_VR: {wirecount: 2}
+  W_CKP_OUT: {wirecount: 2}
+  W_PU: {wirecount: 2}
+  W_ESP: {wirecount: 1}
+  W_SERVO: {wirecount: 2}
+  W_SERVO2: {wirecount: 1}
+  W_SPWR: {wirecount: 3}
+  W_GND_SERVO2: {wirecount: 1}
+  W_CP2: {wirecount: 2}
+  W_RP: {wirecount: 2}
+  W_START: {wirecount: 2}
+  W_ESTOP: {wirecount: 2}
+  W_P1: {wirecount: 3, colors: [RD, BK, WH]}
+  W_P2: {wirecount: 3, colors: [RD, BK, WH]}
+  W_P3: {wirecount: 3, colors: [RD, BK, WH]}
+  W_P4: {wirecount: 3, colors: [RD, BK, WH]}
+
+connections:
+  - [PSU: [V1 +5V], W_PWR: [1], BUS5V: [IN]]
+  - [PSU: [COM], W_GND_PSU: [1], GNDPT: [PSU COM]]
+  - [GNDPT: [T7 GND], W_GND_T7: [1], T7: [GND]]
+  - [GNDPT: [NI GND], W_GND_NI: [1], NI: [GND]]
+  - [GNDPT: [ESP32 GND], W_GND_ESP: [1], ESP32: [GND]]
+  - [GNDPT: [SERVO GND], W_GND_SERVO: [1], SERVO: [GND]]
+  - [BUS5V: [P1], W_P1: [1], P1: [+5V]]
+  - [GNDPT: [SENS GND], W_P1: [2], P1: [GND]]
+  - [P1: [OUT], W_P1: [3], T7: [AIN0]]
+  - [BUS5V: [P2], W_P2: [1], P2: [+5V]]
+  - [GNDPT: [SENS GND], W_P2: [2], P2: [GND]]
+  - [P2: [OUT], W_P2: [3], T7: [AIN1]]
+  - [BUS5V: [P3], W_P3: [1], P3: [+5V]]
+  - [GNDPT: [SENS GND], W_P3: [2], P3: [GND]]
+  - [P3: [OUT], W_P3: [3], T7: [AIN2]]
+  - [BUS5V: [P4], W_P4: [1], P4: [+5V]]
+  - [GNDPT: [SENS GND], W_P4: [2], P4: [GND]]
+  - [P4: [OUT], W_P4: [3], T7: [AIN3]]
+  - [BUS5V: [NI ai4 sense], W_SENSE: [1], NI: [ai4]]
+  - [T7: [FIO0], W_SYNC: [1], NI: [ai5]]
+  - [T7: [FIO0], W_SYNC: [2], T7: [FIO1]]
+  # ---- LM1815 (pin numbers): power, CKP input, timing, peak detector ----
+  - [BUS5V: [LM1815], W_LM: [1], LM1815: [8]]          # pin 8 VCC
+  - [GNDPT: [SENS GND], W_LM: [2], LM1815: [2]]        # pin 2 GND
+  - [CKP: [+], W_VR: [1], LM1815: [3]]                 # pin 3 VIN
+  - [CKP: [-], W_VR: [2], LM1815: [2]]                 # CKP minus -> pin 2 GND (ground-referenced input)
+  - [LM1815: [8], W_RT: [1], R_TIMING: [1]]            # RC timing: R from VCC to pin 14 ...
+  - [R_TIMING: [2], W_RT: [2], LM1815: [14]]
+  - [LM1815: [14], W_CT: [1], C_TIMING: [1]]           # ... C from pin 14 to GND
+  - [C_TIMING: [2], W_CT: [2], GNDPT: [SENS GND]]
+  - [LM1815: [7], W_CP: [1], C_PEAK: [1]]              # peak detector capacitor to GND
+  - [C_PEAK: [2], W_CP: [2], GNDPT: [SENS GND]]
+  - [LM1815: [7], W_CP2: [1], C_PEAK2: [1]]            # second peak detector capacitor to GND
+  - [C_PEAK2: [2], W_CP2: [2], GNDPT: [SENS GND]]
+  - [LM1815: [7], W_RP: [1], R_PEAK: [1]]              # peak detector resistor to GND
+  - [R_PEAK: [2], W_RP: [2], GNDPT: [SENS GND]]
+  - [LM1815: [9], W_TIE9: [1], GNDPT: [SENS GND]]      # unused logic inputs tied low
+  - [LM1815: [11], W_TIE11: [1], GNDPT: [SENS GND]]
+  # ---- CKP pulse output: pin 12 (open collector) -> T7 FIO2 + ESP32, pulled up to 3.3 V ----
+  - [LM1815: [12], W_CKP_OUT: [1], T7: [FIO2]]
+  - [LM1815: [12], W_CKP_OUT: [2], ESP32: [GPIO 4 (CKP in)]]
+  - [ESP32: [3V3], W_PU: [1], R_PULLUP: [3V3 side]]
+  - [R_PULLUP: [OUT side], W_PU: [2], LM1815: [12]]
+  - [BUS5V: [ESP32], W_ESP: [1], ESP32: [5V]]
+  # ---- servos: power goes through the E-STOP, then the servo branch ----
+  - [PSU: [V1 +5V], W_SPWR: [1], ESTOP: [PWR IN]]    # TODO: placeholder source; servos probably need a different voltage/more current
+  - [ESTOP: [PWR OUT], W_SPWR: [2], SERVOPWR: [IN]]
+  - [SERVOPWR: [SERVO V+], W_SERVO: [1], SERVO: [V+]]
+  - [SERVOPWR: [SERVO2 V+], W_SPWR: [3], SERVO2: [V+]]
+  - [GNDPT: [SERVO2 GND], W_GND_SERVO2: [1], SERVO2: [GND]]
+  - [ESP32: [GPIO 21 (throttle servo PWM)], W_SERVO: [2], SERVO: [SIGNAL]]
+  - [ESP32: [GPIO 22 (clutch servo PWM)], W_SERVO2: [1], SERVO2: [SIGNAL]]
+  # ---- START button and E-STOP sense (ESP32 uses INPUT_PULLUP, so a closed contact reads LOW) ----
+  - [START: [contact A], W_START: [1], ESP32: [GPIO 25 (START button)]]
+  - [START: [contact B], W_START: [2], ESP32: [GND]]
+  - [ESTOP: [SENSE A], W_ESTOP: [1], ESP32: [GPIO 26 (E-STOP sense)]]
+  - [ESTOP: [SENSE B], W_ESTOP: [2], ESP32: [GND]]
