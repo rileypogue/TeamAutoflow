@@ -1,24 +1,22 @@
 # wiring diagram 
-## Engine test cell wiring - skeleton. 
 
 connectors:
+  COMPUTER:                 # main computer (T7 + ESP32 both work on Linux)
+    type: Main computer
+    pinlabels: [USB-A 1, USB-A 2, ETHERNET]
   PSU:
     type: Power supply
     pinlabels: [L, N, V1 +5V, V2 +12V, COM]   # L and N are wall power (not wired here)
   GNDPT:                    # Star ground point
     type: Ground star point
-    pinlabels: [PSU COM, T7 GND, NI GND, SENS GND, SERVO GND, SERVO2 GND, ESP32 GND]
+    pinlabels: [PSU COM, T7 GND, SENS GND, SERVO GND, SERVO2 GND, ESP32 GND]
   BUS5V:                    # 5 V sensor bus
     type: 5 V bus
-    pinlabels: [IN, P1, P2, P3, P4, LM1815, ESP32, NI ai4 sense]
+    pinlabels: [IN, P1, P2, P3, P4, LM1815, SUPPLY SENSE]
 
   T7:
     type: LabJack T7 Pro
-    pinlabels: [AIN0, AIN1, AIN2, AIN3, FIO0, FIO1, FIO2, GND]
-  NI:
-    type: NI USB-6001
-    pinlabels: [ai0, ai1, ai2, ai3, ai4, ai5, GND]
-
+    pinlabels: [AIN0, AIN1, AIN2, AIN3, FIO0, FIO1, FIO2, GND, USB, ETHERNET]
   P1: &pt
     type: RIFE pressure transducer
     pinlabels: [+5V, GND, OUT]
@@ -49,6 +47,21 @@ connectors:
     type: Resistor 
     subtype: 1.5 MOhm 
     pinlabels: [pin 7 side, GND side]
+  R_DIV1:                   # 5 V bus supply monitor for the ESP32 ADC (ADC1 pin, input range ~3.1 V). 1% resistors.
+    type: Resistor
+    subtype: 10 kOhm (divider top)
+    pinlabels: [5V side, mid side]
+  R_DIV2:
+    type: Resistor
+    subtype: 10 kOhm (divider bottom)
+    pinlabels: [mid side, GND side]
+  C_ADC:
+    type: Capacitor
+    subtype: 100 nF (at the ADC pin)
+    pinlabels: [mid side, GND side]
+  BMP280:                   # Adafruit BMP280 breakout: ambient pressure + temperature (I2C). Mount away from engine heat, keep leads short.
+    type: Adafruit BMP280 (I2C)
+    pinlabels: [VIN, 3Vo, GND, SCK, SDO, SDI, CS]     # I2C: SCK=SCL, SDI=SDA; SDO unconnected = 0x77 (to GND = 0x76); CS unconnected
   CKP:
     type: CKP sensor (VR)
     pinlabels: [+, -]
@@ -58,8 +71,8 @@ connectors:
     pinlabels: [3V3 side, OUT side]
 
   ESP32:
-    type: ESP32 DevKitC
-    pinlabels: [3V3, 5V, GND, GPIO 4 (CKP in), GPIO 21 (throttle servo PWM), GPIO 22 (clutch servo PWM), GPIO 25 (START button), GPIO 26 (E-STOP sense)]
+    type: ESP32-C6-DevKitC-1
+    pinlabels: [3V3, 5V, GND, GPIO 10 (CKP in), GPIO 18 (throttle servo PWM), GPIO 19 (clutch servo PWM), GPIO 20 (START button), GPIO 21 (E-STOP sense), GPIO 1 (5V sense ADC1), GPIO 6 (I2C SDA), GPIO 7 (I2C SCL), USB (power + serial)]
   SERVO:
     type: ZOSKAY 25 kg digital servo (throttle)
     pinlabels: [V+, GND, SIGNAL]
@@ -77,14 +90,18 @@ connectors:
     pinlabels: [PWR IN, PWR OUT, SENSE A, SENSE B]
 
 cables:
+  W_BMP: {wirecount: 4}
+  W_DIV_TOP: {wirecount: 1}
+  W_DIV_MID: {wirecount: 3}
+  W_DIV_GND: {wirecount: 2}
+  W_USB_ESP: {wirecount: 1}
+  W_USB_T7: {wirecount: 1}
+  W_ETH_T7: {wirecount: 1}
   W_PWR: {wirecount: 1}
   W_GND_PSU: {wirecount: 1}
   W_GND_T7: {wirecount: 1}
-  W_GND_NI: {wirecount: 1}
   W_GND_ESP: {wirecount: 1}
   W_GND_SERVO: {wirecount: 1}
-  W_SENSE: {wirecount: 1}
-  W_SYNC: {wirecount: 2}
   W_LM: {wirecount: 2}
   W_RT: {wirecount: 2}
   W_CT: {wirecount: 2}
@@ -94,7 +111,6 @@ cables:
   W_VR: {wirecount: 2}
   W_CKP_OUT: {wirecount: 2}
   W_PU: {wirecount: 2}
-  W_ESP: {wirecount: 1}
   W_SERVO: {wirecount: 2}
   W_SERVO2: {wirecount: 1}
   W_SPWR: {wirecount: 3}
@@ -112,7 +128,6 @@ connections:
   - [PSU: [V1 +5V], W_PWR: [1], BUS5V: [IN]]
   - [PSU: [COM], W_GND_PSU: [1], GNDPT: [PSU COM]]
   - [GNDPT: [T7 GND], W_GND_T7: [1], T7: [GND]]
-  - [GNDPT: [NI GND], W_GND_NI: [1], NI: [GND]]
   - [GNDPT: [ESP32 GND], W_GND_ESP: [1], ESP32: [GND]]
   - [GNDPT: [SERVO GND], W_GND_SERVO: [1], SERVO: [GND]]
   - [BUS5V: [P1], W_P1: [1], P1: [+5V]]
@@ -127,9 +142,6 @@ connections:
   - [BUS5V: [P4], W_P4: [1], P4: [+5V]]
   - [GNDPT: [SENS GND], W_P4: [2], P4: [GND]]
   - [P4: [OUT], W_P4: [3], T7: [AIN3]]
-  - [BUS5V: [NI ai4 sense], W_SENSE: [1], NI: [ai4]]
-  - [T7: [FIO0], W_SYNC: [1], NI: [ai5]]
-  - [T7: [FIO0], W_SYNC: [2], T7: [FIO1]]
   # ---- LM1815 (pin numbers): power, CKP input, timing, peak detector ----
   - [BUS5V: [LM1815], W_LM: [1], LM1815: [8]]          # pin 8 VCC
   - [GNDPT: [SENS GND], W_LM: [2], LM1815: [2]]        # pin 2 GND
@@ -149,20 +161,35 @@ connections:
   - [LM1815: [11], W_TIE11: [1], GNDPT: [SENS GND]]
   # ---- CKP pulse output: pin 12 (open collector) -> T7 FIO2 + ESP32, pulled up to 3.3 V ----
   - [LM1815: [12], W_CKP_OUT: [1], T7: [FIO2]]
-  - [LM1815: [12], W_CKP_OUT: [2], ESP32: [GPIO 4 (CKP in)]]
+  - [LM1815: [12], W_CKP_OUT: [2], ESP32: [GPIO 10 (CKP in)]]
   - [ESP32: [3V3], W_PU: [1], R_PULLUP: [3V3 side]]
   - [R_PULLUP: [OUT side], W_PU: [2], LM1815: [12]]
-  - [BUS5V: [ESP32], W_ESP: [1], ESP32: [5V]]
   # ---- servos: power goes through the E-STOP, then the servo branch ----
   - [PSU: [V1 +5V], W_SPWR: [1], ESTOP: [PWR IN]]    # TODO: placeholder source; servos probably need a different voltage/more current
   - [ESTOP: [PWR OUT], W_SPWR: [2], SERVOPWR: [IN]]
   - [SERVOPWR: [SERVO V+], W_SERVO: [1], SERVO: [V+]]
   - [SERVOPWR: [SERVO2 V+], W_SPWR: [3], SERVO2: [V+]]
   - [GNDPT: [SERVO2 GND], W_GND_SERVO2: [1], SERVO2: [GND]]
-  - [ESP32: [GPIO 21 (throttle servo PWM)], W_SERVO: [2], SERVO: [SIGNAL]]
-  - [ESP32: [GPIO 22 (clutch servo PWM)], W_SERVO2: [1], SERVO2: [SIGNAL]]
+  - [ESP32: [GPIO 18 (throttle servo PWM)], W_SERVO: [2], SERVO: [SIGNAL]]
+  - [ESP32: [GPIO 19 (clutch servo PWM)], W_SERVO2: [1], SERVO2: [SIGNAL]]
   # ---- START button and E-STOP sense (ESP32 uses INPUT_PULLUP, so a closed contact reads LOW) ----
-  - [START: [contact A], W_START: [1], ESP32: [GPIO 25 (START button)]]
+  - [START: [contact A], W_START: [1], ESP32: [GPIO 20 (START button)]]
   - [START: [contact B], W_START: [2], ESP32: [GND]]
-  - [ESTOP: [SENSE A], W_ESTOP: [1], ESP32: [GPIO 26 (E-STOP sense)]]
+  - [ESTOP: [SENSE A], W_ESTOP: [1], ESP32: [GPIO 21 (E-STOP sense)]]
   - [ESTOP: [SENSE B], W_ESTOP: [2], ESP32: [GND]]
+  # ---- main computer ----
+  - [COMPUTER: [USB-A 1], W_USB_ESP: [1], ESP32: [USB (power + serial)]]   # also powers the ESP32 (so no 5 V bus link)
+  - [COMPUTER: [USB-A 2], W_USB_T7: [1], T7: [USB]]
+  - [COMPUTER: [ETHERNET], W_ETH_T7: [1], T7: [ETHERNET]]
+  # ---- 5 V supply monitor: bus -> 10k -> GPIO1 -> 10k -> GND, 100 nF at the pin (logged by the ESP32 over USB serial) ----
+  - [BUS5V: [SUPPLY SENSE], W_DIV_TOP: [1], R_DIV1: [5V side]]
+  - [R_DIV1: [mid side], W_DIV_MID: [1], ESP32: [GPIO 1 (5V sense ADC1)]]
+  - [R_DIV2: [mid side], W_DIV_MID: [2], ESP32: [GPIO 1 (5V sense ADC1)]]
+  - [C_ADC: [mid side], W_DIV_MID: [3], ESP32: [GPIO 1 (5V sense ADC1)]]
+  - [R_DIV2: [GND side], W_DIV_GND: [1], ESP32: [GND]]
+  - [C_ADC: [GND side], W_DIV_GND: [2], ESP32: [GND]]
+  # ---- BMP280 ambient pressure + temperature, I2C to the ESP32-C6 (powered from the ESP32 3.3 V, read before the run) ----
+  - [ESP32: [3V3], W_BMP: [1], BMP280: [VIN]]
+  - [ESP32: [GND], W_BMP: [2], BMP280: [GND]]
+  - [ESP32: [GPIO 6 (I2C SDA)], W_BMP: [3], BMP280: [SDI]]
+  - [ESP32: [GPIO 7 (I2C SCL)], W_BMP: [4], BMP280: [SCK]]

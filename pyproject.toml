@@ -1,0 +1,11 @@
+[project]
+name = "teamautoflow"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = [
+    "graphviz>=0.21",
+    "labjack-ljm>=1.23.0",
+    "numpy>=2.5.4",
+    "pyserial>=3.5",
+    "wireviz>=0.4.1",
+]
