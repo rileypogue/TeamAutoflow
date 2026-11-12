@@ -9,10 +9,10 @@ connectors:
     pinlabels: [L, N, V1 +5V, V2 +12V, COM]   # L and N are wall power (not wired here)
   GNDPT:                    # Star ground point
     type: Ground star point
-    pinlabels: [PSU COM, T7 GND, SENS GND, SERVO GND, SERVO2 GND, ESP32 GND]
+    pinlabels: [PSU COM, T7 GND, SENS GND, SERVO GND, SERVO2 GND, ESP32 GND, PSU12 GND, HBRIDGE GND, ENGINE GND]   # PSU12/HBRIDGE GND = high-current motor return: short, thick wires
   BUS5V:                    # 5 V sensor bus
     type: 5 V bus
-    pinlabels: [IN, P1, P2, P3, P4, LM1815, SUPPLY SENSE]
+    pinlabels: [IN, P1, P2, P3, P4, LM1815, SUPPLY SENSE, BOSCH TB]
 
   T7:
     type: LabJack T7 Pro
@@ -59,6 +59,42 @@ connectors:
     type: Capacitor
     subtype: 100 nF (at the ADC pin)
     pinlabels: [mid side, GND side]
+  PSU12:                    # ALRS12V16R7AT 12 V supply from the parts list. TODO: confirm terminal names
+    type: 12 V power supply
+    pinlabels: [L, N, +12V, GND]
+  TB_FUSE:
+    type: Fuse (throttle body motor, TODO rating from the throttle body datasheet)
+    pinlabels: [IN, OUT]
+  HBRIDGE:                  # TODO: part. needs >= several A at 12 V, two PWM inputs (IN1/IN2) so it can drive both directions
+    type: H-bridge motor driver
+    pinlabels: [VM, GND, IN1, IN2, OUT1, OUT2]
+  BOSCH_TB:                 # Bosch 32 mm electronic throttle body (pin order per Bosch pin layout / Haltech sheet; VERIFY with a meter)
+    type: Bosch 32 mm electronic throttle body (6-pin, on the CBR intake)
+    pinlabels: [MOTOR-, SENSOR GND, TPS +5V, MOTOR+, TPS2 OUT, TPS1 OUT]
+  R_TPS1A:                  # TPS outputs swing up to ~5 V: divide for the ESP32 ADC (max ~3.1 V)
+    type: Resistor
+    subtype: 10 kOhm (TPS1 divider top)
+    pinlabels: [TPS side, mid side]
+  R_TPS1B:
+    type: Resistor
+    subtype: 15 kOhm (TPS1 divider bottom)
+    pinlabels: [mid side, GND side]
+  C_TPS1:
+    type: Capacitor
+    subtype: 100 nF (at the ADC pin)
+    pinlabels: [mid side, GND side]
+  R_TPS2A:
+    type: Resistor
+    subtype: 10 kOhm (TPS2 divider top)
+    pinlabels: [TPS side, mid side]
+  R_TPS2B:
+    type: Resistor
+    subtype: 15 kOhm (TPS2 divider bottom)
+    pinlabels: [mid side, GND side]
+  C_TPS2:
+    type: Capacitor
+    subtype: 100 nF (at the ADC pin)
+    pinlabels: [mid side, GND side]
   BMP280:                   # Adafruit BMP280 breakout: ambient pressure + temperature (I2C). Mount away from engine heat, keep leads short.
     type: Adafruit BMP280 (I2C)
     pinlabels: [VIN, 3Vo, GND, SCK, SDO, SDI, CS]     # I2C: SCK=SCL, SDI=SDA; SDO unconnected = 0x77 (to GND = 0x76); CS unconnected
@@ -72,7 +108,7 @@ connectors:
 
   ESP32:
     type: ESP32-C6-DevKitC-1
-    pinlabels: [3V3, 5V, GND, GPIO 10 (CKP in), GPIO 18 (throttle servo PWM), GPIO 19 (clutch servo PWM), GPIO 20 (START button), GPIO 21 (E-STOP sense), GPIO 1 (5V sense ADC1), GPIO 6 (I2C SDA), GPIO 7 (I2C SCL), USB (power + serial)]
+    pinlabels: [3V3, 5V, GND, GPIO 10 (CKP in), GPIO 18 (throttle servo PWM), GPIO 19 (clutch servo PWM), GPIO 20 (START button), GPIO 21 (E-STOP sense), GPIO 1 (5V sense ADC1), GPIO 6 (I2C SDA), GPIO 7 (I2C SCL), GPIO 22 (TB H-bridge IN1), GPIO 23 (TB H-bridge IN2), GPIO 2 (TB TPS1 ADC1), GPIO 3 (TB TPS2 ADC1), USB (power + serial)]
   SERVO:
     type: ZOSKAY 25 kg digital servo (throttle)
     pinlabels: [V+, GND, SIGNAL]
@@ -82,14 +118,54 @@ connectors:
   SERVOPWR:                 # servo supply branch: fuse + bulk capacitor go here. TODO: right voltage per servo datasheets
     type: Servo power branch (separate from sensor 5 V)
     pinlabels: [IN, SERVO V+, SERVO2 V+]
-  START:                    # normally-open pushbutton, ESP32 reads it with INPUT_PULLUP (pressed = LOW)
-    type: START pushbutton (NO)
-    pinlabels: [contact A, contact B]
-  ESTOP:                    # mushroom E-stop. Needs TWO contact blocks: NC in the servo power path + one for ESP32 sensing. TODO: part
-    type: E-STOP (NC power contact + sense contact)
-    pinlabels: [PWR IN, PWR OUT, SENSE A, SENSE B]
+  START:                    # the big button = the engine's START switch. Block with 2 NO contacts, both close together while held:
+                            #   STARTER A/B is in the starter solenoid trigger circuit (battery + -> solenoid), so holding it cranks the engine
+                            #   SENSE A/B goes to the ESP32 (INPUT_PULLUP, pressed = LOW) so the software can see/log the crank (it cannot stop it)
+    type: START pushbutton (2 NO contacts, momentary)
+    pinlabels: [STARTER A, STARTER B, SENSE A, SENSE B]
+  BATT:                     # starter battery from the Predator manual: 12 V lead-acid, 300 CCA, 36 Ah (not included with the engine)
+    type: 12 V starter battery (300 CCA, 36 Ah)
+    pinlabels: [+, -]
+  START_FUSE:               # protects the solenoid trigger wiring, placed as close to the battery + as possible. TODO: rating (solenoid coil is small, a few A)
+    type: Fuse (starter solenoid trigger)
+    pinlabels: [IN, OUT]
+  STARTER_SOL:              # the engine's starter solenoid. Manual: battery + cable goes on the uncovered terminal; trigger terminal is what the engine switch START position feeds
+    type: Predator starter solenoid
+    pinlabels: [BATT POS (big terminal), TRIGGER]
+  ESTOP:                    # mushroom E-stop button: ONE NC contact in the relay-coil loop + ONE NO contact for the ESP32 sense input
+    type: E-STOP button (1 NC + 1 NO contact block)
+    pinlabels: [NC A, NC B, SENSE A, SENSE B]
+  KEY:                      # key switch in the same loop: no key = nothing powered
+    type: Key switch (SPST)
+    pinlabels: [A, B]
+  RELAYS:                   # energized = RUN. Any break in the loop (E-stop, key, 12 V loss) drops them all. TODO: rate each contact for its load, or use a contactor
+    type: E-stop relay bank (coil + 3 NO contacts + 1 NC contact)
+    pinlabels: [COIL+, COIL-, NO1 A, NO1 B, NO2 A, NO2 B, NC3 A, NC3 B, NO4 A, NO4 B]   # NO4 = starter solenoid trigger gate (added)
+  PRED_KILL:                # the Predator's ignition kill lead (grounding it stops the engine)
+    type: Predator ignition kill lead
+    pinlabels: [KILL LEAD]
 
 cables:
+  W_COIL_A: {wirecount: 1}
+  W_COIL_B: {wirecount: 1}
+  W_COIL_C: {wirecount: 1}
+  W_COIL_GND: {wirecount: 1}
+  W_KILL: {wirecount: 2}
+  W_12V_ESTOP: {wirecount: 1}
+  W_12V_FUSE: {wirecount: 1}
+  W_12V_HB: {wirecount: 1}
+  W_GND_PSU12: {wirecount: 1}
+  W_GND_HB: {wirecount: 1}
+  W_HB_MOT: {wirecount: 2}
+  W_HB_CTRL: {wirecount: 2}
+  W_TB_5V: {wirecount: 1}
+  W_TB_SGND: {wirecount: 1}
+  W_TPS1_SIG: {wirecount: 1}
+  W_TPS1_NODE: {wirecount: 3}
+  W_TPS1_GND: {wirecount: 2}
+  W_TPS2_SIG: {wirecount: 1}
+  W_TPS2_NODE: {wirecount: 3}
+  W_TPS2_GND: {wirecount: 2}
   W_BMP: {wirecount: 4}
   W_DIV_TOP: {wirecount: 1}
   W_DIV_MID: {wirecount: 3}
@@ -118,6 +194,12 @@ cables:
   W_CP2: {wirecount: 2}
   W_RP: {wirecount: 2}
   W_START: {wirecount: 2}
+  W_BATT_FUSE: {wirecount: 1}
+  W_START_GATE: {wirecount: 1}
+  W_START_SW: {wirecount: 1}
+  W_START_SOL: {wirecount: 1}
+  W_BATT_SOL: {wirecount: 1}    # heavy battery + cable to the solenoid big terminal (gauge/length per the manual's chart)
+  W_BATT_NEG: {wirecount: 1}    # heavy battery - cable to an engine mounting bolt
   W_ESTOP: {wirecount: 2}
   W_P1: {wirecount: 3, colors: [RD, BK, WH]}
   W_P2: {wirecount: 3, colors: [RD, BK, WH]}
@@ -165,16 +247,26 @@ connections:
   - [ESP32: [3V3], W_PU: [1], R_PULLUP: [3V3 side]]
   - [R_PULLUP: [OUT side], W_PU: [2], LM1815: [12]]
   # ---- servos: power goes through the E-STOP, then the servo branch ----
-  - [PSU: [V1 +5V], W_SPWR: [1], ESTOP: [PWR IN]]    # TODO: placeholder source; servos probably need a different voltage/more current
-  - [ESTOP: [PWR OUT], W_SPWR: [2], SERVOPWR: [IN]]
+  - [PSU: [V1 +5V], W_SPWR: [1], RELAYS: [NO1 A]]    # TODO: placeholder source; servos probably need a different voltage/more current
+  - [RELAYS: [NO1 B], W_SPWR: [2], SERVOPWR: [IN]]
   - [SERVOPWR: [SERVO V+], W_SERVO: [1], SERVO: [V+]]
   - [SERVOPWR: [SERVO2 V+], W_SPWR: [3], SERVO2: [V+]]
   - [GNDPT: [SERVO2 GND], W_GND_SERVO2: [1], SERVO2: [GND]]
   - [ESP32: [GPIO 18 (throttle servo PWM)], W_SERVO: [2], SERVO: [SIGNAL]]
   - [ESP32: [GPIO 19 (clutch servo PWM)], W_SERVO2: [1], SERVO2: [SIGNAL]]
-  # ---- START button and E-STOP sense (ESP32 uses INPUT_PULLUP, so a closed contact reads LOW) ----
-  - [START: [contact A], W_START: [1], ESP32: [GPIO 20 (START button)]]
-  - [START: [contact B], W_START: [2], ESP32: [GND]]
+  # ---- START button sense and E-STOP sense (ESP32 uses INPUT_PULLUP, so a closed contact reads LOW) ----
+  - [START: [SENSE A], W_START: [1], ESP32: [GPIO 20 (START button)]]
+  - [START: [SENSE B], W_START: [2], ESP32: [GND]]
+  # ---- engine start: battery + -> fuse -> relay NO4 (dies on E-stop) -> START button -> solenoid trigger. Release the button = crank stops ----
+  # Manual limits: crank 5 s max, then wait 1 min. Nothing here enforces that (it is the operator's hand on the button).
+  - [BATT: [+], W_BATT_FUSE: [1], START_FUSE: [IN]]
+  - [START_FUSE: [OUT], W_START_GATE: [1], RELAYS: [NO4 A]]
+  - [RELAYS: [NO4 B], W_START_SW: [1], START: [STARTER A]]
+  - [START: [STARTER B], W_START_SOL: [1], STARTER_SOL: [TRIGGER]]
+  - [BATT: [+], W_BATT_SOL: [1], STARTER_SOL: [BATT POS (big terminal)]]
+  # Battery - to the engine mounting bolt (cranking current returns through the engine block, NOT through the star point).
+  # The ENGINE GND tie is only so everything shares a reference; it carries no cranking current.
+  - [BATT: [-], W_BATT_NEG: [1], GNDPT: [ENGINE GND]]
   - [ESTOP: [SENSE A], W_ESTOP: [1], ESP32: [GPIO 21 (E-STOP sense)]]
   - [ESTOP: [SENSE B], W_ESTOP: [2], ESP32: [GND]]
   # ---- main computer ----
@@ -193,3 +285,37 @@ connections:
   - [ESP32: [GND], W_BMP: [2], BMP280: [GND]]
   - [ESP32: [GPIO 6 (I2C SDA)], W_BMP: [3], BMP280: [SDI]]
   - [ESP32: [GPIO 7 (I2C SCL)], W_BMP: [4], BMP280: [SCK]]
+
+  # ---- Bosch 32 mm electronic throttle body: 12 V motor through E-STOP, fuse and H-bridge; position sensors to the ESP32 ----
+  - [PSU12: [+12V], W_12V_ESTOP: [1], RELAYS: [NO2 A]]
+  - [RELAYS: [NO2 B], W_12V_FUSE: [1], TB_FUSE: [IN]]
+  - [TB_FUSE: [OUT], W_12V_HB: [1], HBRIDGE: [VM]]
+  - [GNDPT: [PSU12 GND], W_GND_PSU12: [1], PSU12: [GND]]
+  - [GNDPT: [HBRIDGE GND], W_GND_HB: [1], HBRIDGE: [GND]]
+  - [HBRIDGE: [OUT1], W_HB_MOT: [1], BOSCH_TB: [MOTOR+]]
+  - [HBRIDGE: [OUT2], W_HB_MOT: [2], BOSCH_TB: [MOTOR-]]
+  - [ESP32: [GPIO 22 (TB H-bridge IN1)], W_HB_CTRL: [1], HBRIDGE: [IN1]]
+  - [ESP32: [GPIO 23 (TB H-bridge IN2)], W_HB_CTRL: [2], HBRIDGE: [IN2]]
+  - [BUS5V: [BOSCH TB], W_TB_5V: [1], BOSCH_TB: [TPS +5V]]
+  - [GNDPT: [SENS GND], W_TB_SGND: [1], BOSCH_TB: [SENSOR GND]]
+  - [BOSCH_TB: [TPS1 OUT], W_TPS1_SIG: [1], R_TPS1A: [TPS side]]
+  - [R_TPS1A: [mid side], W_TPS1_NODE: [1], ESP32: [GPIO 2 (TB TPS1 ADC1)]]
+  - [R_TPS1B: [mid side], W_TPS1_NODE: [2], ESP32: [GPIO 2 (TB TPS1 ADC1)]]
+  - [C_TPS1: [mid side], W_TPS1_NODE: [3], ESP32: [GPIO 2 (TB TPS1 ADC1)]]
+  - [R_TPS1B: [GND side], W_TPS1_GND: [1], ESP32: [GND]]
+  - [C_TPS1: [GND side], W_TPS1_GND: [2], ESP32: [GND]]
+  - [BOSCH_TB: [TPS2 OUT], W_TPS2_SIG: [1], R_TPS2A: [TPS side]]
+  - [R_TPS2A: [mid side], W_TPS2_NODE: [1], ESP32: [GPIO 3 (TB TPS2 ADC1)]]
+  - [R_TPS2B: [mid side], W_TPS2_NODE: [2], ESP32: [GPIO 3 (TB TPS2 ADC1)]]
+  - [C_TPS2: [mid side], W_TPS2_NODE: [3], ESP32: [GPIO 3 (TB TPS2 ADC1)]]
+  - [R_TPS2B: [GND side], W_TPS2_GND: [1], ESP32: [GND]]
+  - [C_TPS2: [GND side], W_TPS2_GND: [2], ESP32: [GND]]
+
+  # ---- E-stop relay loop: 12 V -> key -> E-stop (NC) -> relay coil. Pressing the E-stop, turning the key off, or losing 12 V drops everything ----
+  - [PSU12: [+12V], W_COIL_A: [1], KEY: [A]]
+  - [KEY: [B], W_COIL_B: [1], ESTOP: [NC A]]
+  - [ESTOP: [NC B], W_COIL_C: [1], RELAYS: [COIL+]]
+  - [GNDPT: [PSU12 GND], W_COIL_GND: [1], RELAYS: [COIL-]]
+  # ---- Predator (the prime mover): relay contact 3 (normally closed) grounds the kill lead when stopped ----
+  - [PRED_KILL: [KILL LEAD], W_KILL: [1], RELAYS: [NC3 A]]
+  - [RELAYS: [NC3 B], W_KILL: [2], GNDPT: [ENGINE GND]]

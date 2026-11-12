@@ -15,5 +15,6 @@ data/*
 *.tmp
 .env
 *.env
+*.csv
 
 scripts/PID_controller/bin

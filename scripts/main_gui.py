@@ -9,6 +9,7 @@ import csv
 from pathvalidate import validate_filename, ValidationError
 from datetime import datetime
 from zoneinfo import ZoneInfo
+from DAQ import LabJackLogger
 
 SERIAL_PORT = '/dev/ttyUSB0'
 BAUD_RATE = 115200
@@ -31,6 +32,8 @@ class App(ctk.CTk):
         self.csv = None
         self.writer = None
         self.csv_title = None
+
+        self.daq = LabJackLogger(fs=15000)
 
         self.protocol("WM_DELETE_WINDOW", self.on_close)
         self.grid_columnconfigure(0, weight=1)
@@ -88,7 +91,7 @@ class App(ctk.CTk):
        
         self.toggle_button.configure(state="disabled")
         try:
-            self.ser = serial.Serial(SERIAL_PORT, BAUD_RATE, timeout=1)
+            self.ser = serial.Serial(SERIAL_PORT, BAUD_RATE, timeout=1, write_timeout=1)
             self.after(2500, lambda: self.toggle_button.configure(state="normal")) # wait for esp32 reset
         except (serial.SerialException, AttributeError) as e:
             self.ser = None
@@ -120,6 +123,8 @@ class App(ctk.CTk):
 
         self.csv =  open(self.csv_title, mode='a', newline='', encoding='utf-8')
         self.writer = csv.writer(self.csv) 
+        base = os.path.splitext(self.csv_title)[0]
+        self.daq.start(outdir=base + "_lj", minutes=None)
         if file_is_new:
             self.writer.writerow(["esp_us_time", "type", "value"])
 
@@ -159,6 +164,7 @@ class App(ctk.CTk):
             pass
         self.toggle_button.configure(state="disabled")
         self.after(200, self.finish_recording)
+        self.daq.stop()
 
 
     def finish_recording(self):
