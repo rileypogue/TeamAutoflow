@@ -6,13 +6,23 @@ connectors:
     pinlabels: [USB-A 1, USB-A 2, ETHERNET]
   PSU:
     type: Power supply
-    pinlabels: [L, N, V1 +5V, V2 +12V, COM]   # L and N are wall power (not wired here)
+    pinlabels: [L, N, V1 +5V, V2 +12V, COM]   # ONE supply: V1 = 5 V, V2 = 12 V, COM = common for both. L and N are wall power (not wired here). TODO: connect mains earth (PE) to the chassis. TODO: check V2 current rating covers throttle body motor + relay coils
   GNDPT:                    # Star ground point
     type: Ground star point
-    pinlabels: [PSU COM, T7 GND, SENS GND, SERVO GND, SERVO2 GND, ESP32 GND, PSU12 GND, HBRIDGE GND, ENGINE GND]   # PSU12/HBRIDGE GND = high-current motor return: short, thick wires
+    # Physical layout on the ground bus (heavy copper / bolted lugs, NOT breadboard pads, for the heavy zone):
+    #   HEAVY ZONE (short, thick wires): HBRIDGE GND (motor return), RELAY COIL GND, SERVO GND, SERVO2 GND, PSU COM
+    #   QUIET ZONE (joined to the heavy zone at the PSU COM tap): T7 GND, SENS GND, ESP32 GND
+    # Motor/servo current then never flows through the sensor tap points.
+    pinlabels: [PSU COM, T7 GND, SENS GND, SERVO GND, SERVO2 GND, ESP32 GND, RELAY COIL GND, HBRIDGE GND]   # HBRIDGE GND = high-current motor return (12 V and 5 V both return to PSU COM): short, thick wires. ENGINE TIE = one permanent thin wire to the engine block (optional, battery-independent)
+  LMGND:                    # local ground node at the LM1815 (copper bus right next to pin 2); ONE wire from here back to the star point
+    type: LM1815 local ground node
+    pinlabels: [PIN 2, C_TIMING, C_PEAK, C_PEAK2, R_PEAK, PIN 9 TIE, PIN 11 TIE, TO STAR]
+  ENGINE_BLK:               # engine block ground bolt: the ONLY place the battery - and the kill lead land
+    type: Engine block ground bolt
+    pinlabels: [BATT -, KILL RETURN, STAR TIE]
   BUS5V:                    # 5 V sensor bus
     type: 5 V bus
-    pinlabels: [IN, P1, P2, P3, P4, LM1815, SUPPLY SENSE, BOSCH TB]
+    pinlabels: [IN, P1, P2, P3, P4, LM1815, SUPPLY SENSE, BOSCH TB, HBRIDGE VCC]
 
   T7:
     type: LabJack T7 Pro
@@ -59,15 +69,12 @@ connectors:
     type: Capacitor
     subtype: 100 nF (at the ADC pin)
     pinlabels: [mid side, GND side]
-  PSU12:                    # ALRS12V16R7AT 12 V supply from the parts list. TODO: confirm terminal names
-    type: 12 V power supply
-    pinlabels: [L, N, +12V, GND]
   TB_FUSE:
     type: Fuse (throttle body motor, TODO rating from the throttle body datasheet)
     pinlabels: [IN, OUT]
-  HBRIDGE:                  # TODO: part. needs >= several A at 12 V, two PWM inputs (IN1/IN2) so it can drive both directions
-    type: H-bridge motor driver
-    pinlabels: [VM, GND, IN1, IN2, OUT1, OUT2]
+  HBRIDGE:                  # BTS7960 / IBT-2 module (MTDELE 2-pack on Amazon). 4-pos screw terminal + 8-pin header. Header pins R_IS / L_IS (current sense) left unconnected.
+    type: BTS7960 43A H-bridge module (IBT-2)
+    pinlabels: [B+, B-, M+, M-, VCC, GND, RPWM, LPWM, R_EN, L_EN]
   BOSCH_TB:                 # Bosch 32 mm electronic throttle body (pin order per Bosch pin layout / Haltech sheet; VERIFY with a meter)
     type: Bosch 32 mm electronic throttle body (6-pin, on the CBR intake)
     pinlabels: [MOTOR-, SENSOR GND, TPS +5V, MOTOR+, TPS2 OUT, TPS1 OUT]
@@ -150,14 +157,16 @@ cables:
   W_COIL_B: {wirecount: 1}
   W_COIL_C: {wirecount: 1}
   W_COIL_GND: {wirecount: 1}
-  W_KILL: {wirecount: 2}
+  W_KILL: {wirecount: 2}        # wire 2 goes DIRECT to the engine block bolt, never through the star point or electronics
   W_12V_ESTOP: {wirecount: 1}
   W_12V_FUSE: {wirecount: 1}
   W_12V_HB: {wirecount: 1}
-  W_GND_PSU12: {wirecount: 1}
-  W_GND_HB: {wirecount: 1}
+  W_GND_HB: {wirecount: 1}      # thick + short: throttle motor return from the module B- to the star point
   W_HB_MOT: {wirecount: 2}
   W_HB_CTRL: {wirecount: 2}
+  W_HB_VCC: {wirecount: 1}      # logic supply for the module (5 V bus)
+  W_HB_GND: {wirecount: 1}      # logic ground to the ESP32 (signal reference only)
+  W_HB_EN: {wirecount: 2}       # R_EN and L_EN tied to VCC (enabled). TODO: the sketch drives R_EN/L_EN from GPIOs; assign 2 free ESP32 pins if you want software enable
   W_TB_5V: {wirecount: 1}
   W_TB_SGND: {wirecount: 1}
   W_TPS1_SIG: {wirecount: 1}
@@ -174,10 +183,10 @@ cables:
   W_USB_T7: {wirecount: 1}
   W_ETH_T7: {wirecount: 1}
   W_PWR: {wirecount: 1}
-  W_GND_PSU: {wirecount: 1}
+  W_GND_PSU: {wirecount: 1}     # HEAVY + SHORT: carries ALL the return to PSU COM: 5 V (sensors, T7, ESP32, servos) AND 12 V (throttle motor, relay coils). Size for the stall current of the throttle motor plus servos
   W_GND_T7: {wirecount: 1}
   W_GND_ESP: {wirecount: 1}
-  W_GND_SERVO: {wirecount: 1}
+  W_GND_SERVO: {wirecount: 1}   # thick + short: servo return current
   W_LM: {wirecount: 2}
   W_RT: {wirecount: 2}
   W_CT: {wirecount: 2}
@@ -190,7 +199,7 @@ cables:
   W_SERVO: {wirecount: 2}
   W_SERVO2: {wirecount: 1}
   W_SPWR: {wirecount: 3}
-  W_GND_SERVO2: {wirecount: 1}
+  W_GND_SERVO2: {wirecount: 1}  # thick + short: servo return current
   W_CP2: {wirecount: 2}
   W_RP: {wirecount: 2}
   W_START: {wirecount: 2}
@@ -199,7 +208,8 @@ cables:
   W_START_SW: {wirecount: 1}
   W_START_SOL: {wirecount: 1}
   W_BATT_SOL: {wirecount: 1}    # heavy battery + cable to the solenoid big terminal (gauge/length per the manual's chart)
-  W_BATT_NEG: {wirecount: 1}    # heavy battery - cable to an engine mounting bolt
+  W_BATT_NEG: {wirecount: 1}    # heavy battery - cable to an engine mounting bolt (battery is only connected for starts: connect - first, + last)
+  W_GND_LM: {wirecount: 1}      # the single wire from the LM1815 local ground node back to the star point
   W_ESTOP: {wirecount: 2}
   W_P1: {wirecount: 3, colors: [RD, BK, WH]}
   W_P2: {wirecount: 3, colors: [RD, BK, WH]}
@@ -226,21 +236,22 @@ connections:
   - [P4: [OUT], W_P4: [3], T7: [AIN3]]
   # ---- LM1815 (pin numbers): power, CKP input, timing, peak detector ----
   - [BUS5V: [LM1815], W_LM: [1], LM1815: [8]]          # pin 8 VCC
-  - [GNDPT: [SENS GND], W_LM: [2], LM1815: [2]]        # pin 2 GND
+  - [LMGND: [PIN 2], W_LM: [2], LM1815: [2]]           # pin 2 GND (local ground node, right at the chip)
   - [CKP: [+], W_VR: [1], LM1815: [3]]                 # pin 3 VIN
   - [CKP: [-], W_VR: [2], LM1815: [2]]                 # CKP minus -> pin 2 GND (ground-referenced input)
   - [LM1815: [8], W_RT: [1], R_TIMING: [1]]            # RC timing: R from VCC to pin 14 ...
   - [R_TIMING: [2], W_RT: [2], LM1815: [14]]
   - [LM1815: [14], W_CT: [1], C_TIMING: [1]]           # ... C from pin 14 to GND
-  - [C_TIMING: [2], W_CT: [2], GNDPT: [SENS GND]]
+  - [C_TIMING: [2], W_CT: [2], LMGND: [C_TIMING]]
   - [LM1815: [7], W_CP: [1], C_PEAK: [1]]              # peak detector capacitor to GND
-  - [C_PEAK: [2], W_CP: [2], GNDPT: [SENS GND]]
+  - [C_PEAK: [2], W_CP: [2], LMGND: [C_PEAK]]
   - [LM1815: [7], W_CP2: [1], C_PEAK2: [1]]            # second peak detector capacitor to GND
-  - [C_PEAK2: [2], W_CP2: [2], GNDPT: [SENS GND]]
+  - [C_PEAK2: [2], W_CP2: [2], LMGND: [C_PEAK2]]
   - [LM1815: [7], W_RP: [1], R_PEAK: [1]]              # peak detector resistor to GND
-  - [R_PEAK: [2], W_RP: [2], GNDPT: [SENS GND]]
-  - [LM1815: [9], W_TIE9: [1], GNDPT: [SENS GND]]      # unused logic inputs tied low
-  - [LM1815: [11], W_TIE11: [1], GNDPT: [SENS GND]]
+  - [R_PEAK: [2], W_RP: [2], LMGND: [R_PEAK]]
+  - [LM1815: [9], W_TIE9: [1], LMGND: [PIN 9 TIE]]     # unused logic inputs tied low
+  - [LM1815: [11], W_TIE11: [1], LMGND: [PIN 11 TIE]]
+  - [LMGND: [TO STAR], W_GND_LM: [1], GNDPT: [SENS GND]]   # one wire from the local node to the star (keep CKP wiring a twisted pair)
   # ---- CKP pulse output: pin 12 (open collector) -> T7 FIO2 + ESP32, pulled up to 3.3 V ----
   - [LM1815: [12], W_CKP_OUT: [1], T7: [FIO2]]
   - [LM1815: [12], W_CKP_OUT: [2], ESP32: [GPIO 10 (CKP in)]]
@@ -265,12 +276,13 @@ connections:
   - [START: [STARTER B], W_START_SOL: [1], STARTER_SOL: [TRIGGER]]
   - [BATT: [+], W_BATT_SOL: [1], STARTER_SOL: [BATT POS (big terminal)]]
   # Battery - to the engine mounting bolt (cranking current returns through the engine block, NOT through the star point).
-  # The ENGINE GND tie is only so everything shares a reference; it carries no cranking current.
-  - [BATT: [-], W_BATT_NEG: [1], GNDPT: [ENGINE GND]]
+  # The battery is only connected for starts. Its - goes ONLY to the engine block bolt, never to the star point.
+  # The optional star tie below is a separate thin permanent wire to the same bolt; it carries no cranking current.
+  - [BATT: [-], W_BATT_NEG: [1], ENGINE_BLK: [BATT -]]
   - [ESTOP: [SENSE A], W_ESTOP: [1], ESP32: [GPIO 21 (E-STOP sense)]]
   - [ESTOP: [SENSE B], W_ESTOP: [2], ESP32: [GND]]
   # ---- main computer ----
-  - [COMPUTER: [USB-A 1], W_USB_ESP: [1], ESP32: [USB (power + serial)]]   # also powers the ESP32 (so no 5 V bus link)
+  - [COMPUTER: [USB-A 1], W_USB_ESP: [1], ESP32: [USB (power + serial)]]   # also powers the ESP32 (so no 5 V bus link). NOTE: ESP32 and T7 both ground to the computer via USB AND via the star = ground loop; if the pressure readings are noisy, put a USB isolator on the ESP32
   - [COMPUTER: [USB-A 2], W_USB_T7: [1], T7: [USB]]
   - [COMPUTER: [ETHERNET], W_ETH_T7: [1], T7: [ETHERNET]]
   # ---- 5 V supply monitor: bus -> 10k -> GPIO1 -> 10k -> GND, 100 nF at the pin (logged by the ESP32 over USB serial) ----
@@ -287,15 +299,18 @@ connections:
   - [ESP32: [GPIO 7 (I2C SCL)], W_BMP: [4], BMP280: [SCK]]
 
   # ---- Bosch 32 mm electronic throttle body: 12 V motor through E-STOP, fuse and H-bridge; position sensors to the ESP32 ----
-  - [PSU12: [+12V], W_12V_ESTOP: [1], RELAYS: [NO2 A]]
+  - [PSU: [V2 +12V], W_12V_ESTOP: [1], RELAYS: [NO2 A]]
   - [RELAYS: [NO2 B], W_12V_FUSE: [1], TB_FUSE: [IN]]
-  - [TB_FUSE: [OUT], W_12V_HB: [1], HBRIDGE: [VM]]
-  - [GNDPT: [PSU12 GND], W_GND_PSU12: [1], PSU12: [GND]]
-  - [GNDPT: [HBRIDGE GND], W_GND_HB: [1], HBRIDGE: [GND]]
-  - [HBRIDGE: [OUT1], W_HB_MOT: [1], BOSCH_TB: [MOTOR+]]
-  - [HBRIDGE: [OUT2], W_HB_MOT: [2], BOSCH_TB: [MOTOR-]]
-  - [ESP32: [GPIO 22 (TB H-bridge IN1)], W_HB_CTRL: [1], HBRIDGE: [IN1]]
-  - [ESP32: [GPIO 23 (TB H-bridge IN2)], W_HB_CTRL: [2], HBRIDGE: [IN2]]
+  - [TB_FUSE: [OUT], W_12V_HB: [1], HBRIDGE: [B+]]
+  - [GNDPT: [HBRIDGE GND], W_GND_HB: [1], HBRIDGE: [B-]]
+  - [HBRIDGE: [M+], W_HB_MOT: [1], BOSCH_TB: [MOTOR+]]
+  - [HBRIDGE: [M-], W_HB_MOT: [2], BOSCH_TB: [MOTOR-]]
+  - [ESP32: [GPIO 22 (TB H-bridge IN1)], W_HB_CTRL: [1], HBRIDGE: [RPWM]]
+  - [ESP32: [GPIO 23 (TB H-bridge IN2)], W_HB_CTRL: [2], HBRIDGE: [LPWM]]
+  - [BUS5V: [HBRIDGE VCC], W_HB_VCC: [1], HBRIDGE: [VCC]]
+  - [BUS5V: [HBRIDGE VCC], W_HB_EN: [1], HBRIDGE: [R_EN]]
+  - [BUS5V: [HBRIDGE VCC], W_HB_EN: [2], HBRIDGE: [L_EN]]
+  - [ESP32: [GND], W_HB_GND: [1], HBRIDGE: [GND]]   # logic ground reference for the PWM signals
   - [BUS5V: [BOSCH TB], W_TB_5V: [1], BOSCH_TB: [TPS +5V]]
   - [GNDPT: [SENS GND], W_TB_SGND: [1], BOSCH_TB: [SENSOR GND]]
   - [BOSCH_TB: [TPS1 OUT], W_TPS1_SIG: [1], R_TPS1A: [TPS side]]
@@ -312,10 +327,10 @@ connections:
   - [C_TPS2: [GND side], W_TPS2_GND: [2], ESP32: [GND]]
 
   # ---- E-stop relay loop: 12 V -> key -> E-stop (NC) -> relay coil. Pressing the E-stop, turning the key off, or losing 12 V drops everything ----
-  - [PSU12: [+12V], W_COIL_A: [1], KEY: [A]]
+  - [PSU: [V2 +12V], W_COIL_A: [1], KEY: [A]]
   - [KEY: [B], W_COIL_B: [1], ESTOP: [NC A]]
   - [ESTOP: [NC B], W_COIL_C: [1], RELAYS: [COIL+]]
-  - [GNDPT: [PSU12 GND], W_COIL_GND: [1], RELAYS: [COIL-]]
+  - [GNDPT: [RELAY COIL GND], W_COIL_GND: [1], RELAYS: [COIL-]]
   # ---- Predator (the prime mover): relay contact 3 (normally closed) grounds the kill lead when stopped ----
   - [PRED_KILL: [KILL LEAD], W_KILL: [1], RELAYS: [NC3 A]]
-  - [RELAYS: [NC3 B], W_KILL: [2], GNDPT: [ENGINE GND]]
+  - [RELAYS: [NC3 B], W_KILL: [2], ENGINE_BLK: [KILL RETURN]]   # direct to the block so the E-stop kills the engine with or without the battery
