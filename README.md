@@ -9,7 +9,7 @@ opening, and records in-cylinder pressure to estimate **volumetric efficiency (V
 ---
 
 ## Quick start
-
+ 
 ```bash
 git clone https://github.com/rileypogue/TeamAutoflow.git 
 cd TeamAutoflow
@@ -17,24 +17,105 @@ uv sync                          # installs the Python dependencies from uv.lock
 cd scripts
 uv run python main_gui.py        # the GUI expects to run from scripts/ (data goes to ../data)
 ```
-
+ 
 Upload the ESP32 firmware (see [Firmware](#firmware-esp32-c6)) from the scripts directory:
-
+ 
 ```bash
 arduino-cli compile --fqbn esp32:esp32:esp32c6 PID_controller 
 arduino-cli upload  --fqbn esp32:esp32:esp32c6 -p /dev/ttyUSB0 PID_controller
 ```
-
-or (Windows): 
+ 
+---
+ 
+## Setup (Linux, first time only)
+ 
+1. **uv** (Python project manager): https://docs.astral.sh/uv/
+2. **LabJack LJM library**: the `labjack-ljm` Python package is only a wrapper, so the LJM driver itself must be
+   installed from LabJack's website (Support → Software → LJM software installers, Linux version).
+3. **Tkinter** (comes with system Python, not pip):
+```bash
+sudo apt install python3-tk
 ```
-arduino-cli upload --fqbn esp32:esp32:esp32c6 -p COM5 PID_controller
+4. **Serial port permission** (otherwise the GUI can't open the ESP32):
+```bash
+sudo usermod -aG dialout $USER     # then log out and back in
 ```
-
-check device manager for specific COM port.
-
-
+5. **arduino-cli + ESP32 core + libraries**:
+```bash
+arduino-cli core update-index --additional-urls https://espressif.github.io/arduino-esp32/package_esp32_index.json
+arduino-cli core install esp32:esp32 --additional-urls https://espressif.github.io/arduino-esp32/package_esp32_index.json
+arduino-cli lib install "Adafruit BMP280 Library"
 ```
+   
+The firmware uses the **ESP32 Arduino core 3.x** API (`ledcAttach(pin, freq, bits)` / `ledcWrite(pin, duty)`).
+It will not compile on core 2.x.
+ 
+## Setup (Windows 10, first time only)
+ 
+Use **PowerShell** for the commands below.
+ 
+1. **Git**: https://git-scm.com/download/win (defaults are fine).
+2. **uv**:
+```powershell
+powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
 ```
+   Close and reopen PowerShell afterwards so `uv` is on PATH.
+3. **LabJack LJM**: run the Windows LJM installer from LabJack's website (Support → Software → LJM software
+   installers). It also installs **Kipling**, which is handy for checking the T7 is detected. Close Kipling before
+   starting the GUI, since only one program can stream from the T7.
+4. **ESP32 USB driver**: plug the board in and check *Device Manager → Ports (COM & LPT)*. If no COM port appears,
+   install the USB-to-serial driver for the chip on the board's UART port (Silicon Labs CP210x or WCH CH343), or
+   use the board's native **USB** port, which needs no driver.
+5. **ESP32 upload tool**, pick one:
+   - **Arduino IDE** (easiest on Windows): see [Uploading with the Arduino IDE](#uploading-with-the-arduino-ide) below.
+   - **arduino-cli**: download the Windows build from https://arduino.github.io/arduino-cli/ (Installation page),
+     put `arduino-cli.exe` in a folder on your PATH, then run the same `core update-index`, `core install` and
+     `lib install` commands as in the Linux setup.
+
+Then:
+ 
+```powershell
+git clone https://github.com/rileypogue/TeamAutoflow.git
+cd TeamAutoflow
+uv sync
+cd scripts
+uv run python main_gui.py
+```
+ 
+Uploading firmware uses a COM port instead of `/dev/ttyUSB0`. Find it with `arduino-cli board list`:
+ 
+```powershell
+arduino-cli compile --fqbn esp32:esp32:esp32c6 PID_controller
+arduino-cli upload  --fqbn esp32:esp32:esp32c6 -p COM5 PID_controller
+```
+ 
+No `dialout`-style permission step is needed on Windows. See [Windows-specific troubleshooting](#windows-specific).
+
+
+### Uploading with the Arduino IDE
+
+**One-time setup**
+
+1. **Add the ESP32 boards:** *File → Preferences → Additional boards manager URLs*, paste
+   `https://espressif.github.io/arduino-esp32/package_esp32_index.json` and click OK.
+2. *Tools → Board → Boards Manager*, search **esp32**, and install **"esp32 by Espressif Systems"**,
+   version **3.x** (the firmware won't compile on 2.x).
+3. *Tools → Manage Libraries*, search **Adafruit BMP280**, install **"Adafruit BMP280 Library"**,
+   and click **Install All** when it asks about dependencies (Adafruit Unified Sensor, Adafruit BusIO).
+
+**Each upload**
+
+1. *File → Open* → `TeamAutoflow/scripts/PID_controller/PID_controller.ino`
+   (the folder name and the `.ino` name must match, or the IDE offers to move the file; say no and check the names).
+2. *Tools → Board → esp32 →* **ESP32C6 Dev Module**
+3. *Tools → Port →* the ESP32's **COMx** port 
+4. *Tools → USB CDC On Boot*:
+   - **Disabled** if the cable is in the board's **UART** port
+   - **Enabled** if the cable is in the board's native **USB** port. Otherwise `Serial` output never reaches
+     that port, and the GUI can't find the ESP32.
+5. Click **Upload** (→). Wait for "Hard resetting via RTS pin..." / "Done uploading".
+6. **Close the Serial Monitor before starting the GUI.** Windows lets only one program use a COM port.
+
 ---
 
 ## Managing dependencies
