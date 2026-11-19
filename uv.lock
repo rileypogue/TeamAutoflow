@@ -702,6 +702,7 @@ dependencies = [
     { name = "pyserial" },
     { name = "pyyaml" },
     { name = "scipy" },
+    { name = "tzdata" },
     { name = "wireviz" },
 ]
 
@@ -716,6 +717,7 @@ requires-dist = [
     { name = "pyserial", specifier = ">=3.5" },
     { name = "pyyaml", specifier = ">=6.0.3" },
     { name = "scipy", specifier = ">=1.18.1" },
+    { name = "tzdata", specifier = ">=2026.6" },
     { name = "wireviz", specifier = ">=0.4.1" },
 ]
 

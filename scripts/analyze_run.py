@@ -35,11 +35,7 @@ import os
 import sys
 
 import numpy as np
-
-try:
-    from scipy.signal import find_peaks
-except ImportError:
-    sys.exit("scipy is required: pip install scipy")
+from scipy.signal import find_peaks
 
 import matplotlib
 matplotlib.use("Agg")          # no window: the GUI opens the saved PNG
@@ -70,7 +66,6 @@ PRESSURE_VALUES = [0.0, 44.5, 89.0, 133.5, 177.9, 222.4, 266.9, 311.4, 355.9, 40
 FULL_CHARGE_PR = COMPRESSION_RATIO ** POLYTROPIC_N
 
 def fail(msg):
-    """Exit non-zero; the GUI shows the last stderr line."""
     sys.exit(f"ERROR: {msg}")
 
 
@@ -82,7 +77,6 @@ def volts_to_kpa(v):
     out[lo] = lk[0] + (v[lo] - lv[0]) * (lk[1] - lk[0]) / (lv[1] - lv[0])
     out[hi] = lk[-1] + (v[hi] - lv[-1]) * (lk[-1] - lk[-2]) / (lv[-1] - lv[-2])
     return out
-
 
 def load_lj(run_dir):
     meta_path = os.path.join(run_dir, "meta.json")
