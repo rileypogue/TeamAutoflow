@@ -3,9 +3,13 @@ name = "teamautoflow"
 version = "0.1.0"
 requires-python = ">=3.12"
 dependencies = [
+    "customtkinter>=6.0.0",
     "graphviz>=0.21",
     "labjack-ljm>=1.23.0",
+    "matplotlib>=3.11.2",
     "numpy>=2.5.4",
+    "pathvalidate>=3.3.1",
     "pyserial>=3.5",
+    "scipy>=1.18.1",
     "wireviz>=0.4.1",
 ]
