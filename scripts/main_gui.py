@@ -270,13 +270,13 @@ class App(ctk.CTk):
             lines = [
                 "RPM:  " + show("RPM", 1.5, "{:.0f}"),
                 "Throttle plate:  " + ("--" if pos is None else f"{pos * 100:.0f} %"),
-                "Ambient temp:  " + show("amb_T", 3.0, "{:.1f} C"),
-                "Ambient pressure:  " + show("amb_P", 3.0, "{:.2f} kPa"),
+                "Ambient temp:  " + show("amb_T", 12.0, "{:.1f} C"),
+                "Ambient pressure:  " + show("amb_P", 12.0, "{:.2f} kPa"),
             ]
             ls = self.daq.last_scan
             if ls is not None:
                 lines += [f"AIN{i}:  {ls[i]:.3f} V" for i in range(4)]
-            missing = self.fresh("amb_T", 3.0) is None or self.fresh("amb_P", 3.0) is None
+            missing = self.fresh("amb_T", 12.0) is None or self.fresh("amb_P", 12.0) is None
             self.live_label.configure(text="\n".join(lines), text_color="#ffb347" if missing else WHITE)
         self.after(500, self.update_live)
 

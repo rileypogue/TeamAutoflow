@@ -210,7 +210,12 @@ void controlStep() {
 // try and communicate with BMP280 over I2C
 bool ambientBegin() {
   Wire.begin(I2C_SDA_PIN, I2C_SCL_PIN); // uses Arduino Wire library for I2C, set the two wires (data and clock)
-  return bmp.begin(0x77) || bmp.begin(0x76);   // last time answered at 0x77, who knows if thats permanent
+  Wire.setClock(50000);
+  for (int i= 0; i < 10; i++) { // try a couple times because it doesn't always start immediately for some reason
+    if (bmp.begin(0x77) || bmp.begin(0x76)) return true;
+    delay(100);
+  }
+  return false;   // last time answered at 0x77, who knows if thats permanent
 }
 
 // read temperature and pressure from BMP280 
