@@ -1,32 +1,4 @@
 #!/usr/bin/env python3
-"""
-analyze_run.py - VE estimate from in-cylinder pressure for the CBR600RR flowbench.
-
-Usage (the GUI calls it like this):
-    python analyze_run.py RUN_DIR [--tare TARE_DIR] [--amb-kpa 81.7]
-
-Reads from RUN_DIR:
-    lj.bin      LabJack stream, float32, interleaved [scan][channel]  (written by DAQ.py)
-    meta.json   channel names, actual scan rate, PC start times, sweep settings
-    esp.csv     ESP32 log: esp_us_time,type,value  (uses amb_P, amb_T, pos/tps1)
-    steps.csv   (sweep runs only) one row per RPM/throttle step
-
-Writes to RUN_DIR:
-    results.csv     one row per step (sweep) or per MANUAL_WINDOW_S slice (manual run)
-    ve_heatmap.png  mean VE estimate by RPM x throttle (the GUI opens this)
-    traces.png      pressure traces + detected peaks for one window (sanity check)
-
-METHOD
-    The transducers are GAUGE sensors (0 kPa = atmosphere) and cannot read vacuum, so the
-    intake-stroke pressure is not measurable. Instead, each cylinder's peak motored
-    compression pressure is used: for a motored (non-firing) engine,
-        P_peak_abs ~= P_trapped * CR^n
-    so the pressure ratio  PR = P_peak_abs / P_ambient  scales with trapped air, and
-        VE_est = PR / CR^n
-    equals 1.0 when the cylinder traps a full charge at ambient pressure.
-    PR is saved in results.csv too, so a different normalisation can be applied later.
-    CR and n below are ASSUMPTIONS: calibrate n on a known wide-open-throttle point if you can.
-"""
 
 import argparse
 import csv
@@ -47,7 +19,7 @@ CYL_NAMES = ["cyl1", "cyl2", "cyl3", "cyl4"]   # cylinder plumbed to each channe
 CKP_CHANNEL = "FIO_STATE"
 CKP_BIT = 0                     # FIO0 = bit 0 of FIO_STATE
 PULSES_PER_REV = 12             # LM1815 pulses per crank rev
-COMPRESSION_RATIO = 12.2        # CBR600RR geometric CR: check the spec for your model year
+COMPRESSION_RATIO = 12.2        # CBR600RR geometric CR
 POLYTROPIC_N = 1.30             # motored compression exponent (assumption, ~1.25-1.35)
 DEAD_CHANNEL_V = 0.30           # mean volts below this = sensor unplugged/floating, ignored
 MIN_PEAK_PROMINENCE_KPA = 20.0  # smallest compression bump that counts as a cycle
@@ -55,7 +27,7 @@ MANUAL_WINDOW_S = 1.0           # slice length for runs without steps.csv
 RPM_BIN = 250                   # heatmap bins for manual runs
 THR_BIN = 10
 
-# pressure transducer LUT (same as the GUI): volts -> kPa gauge
+# pressure transducer LUT taken from RIFE sensor website 
 PRESSURE_VOLTAGES = [0.5, 0.629, 0.758, 0.887, 1.016, 1.145, 1.274, 1.403, 1.532, 1.661, 1.790,
                      1.919, 2.048, 2.177, 2.306, 2.435, 2.564, 2.693, 2.822, 2.951, 3.080, 3.209,
                      3.338, 3.467, 3.596, 3.725, 3.854, 3.983, 4.112, 4.241, 4.370, 4.50]
@@ -65,16 +37,17 @@ PRESSURE_VALUES = [0.0, 44.5, 89.0, 133.5, 177.9, 222.4, 266.9, 311.4, 355.9, 40
 
 FULL_CHARGE_PR = COMPRESSION_RATIO ** POLYTROPIC_N
 
+# runs whenever we're missing essential data for analysis
 def fail(msg):
     sys.exit(f"ERROR: {msg}")
 
 
 def volts_to_kpa(v):
-    v = np.asarray(v, dtype=float)
-    lv, lk = np.asarray(PRESSURE_VOLTAGES), np.asarray(PRESSURE_VALUES)
-    out = np.interp(v, lv, lk)
+    v = np.asarray(v, dtype=float) # convert voltages to NumPy array of decimal values
+    lv, lk = np.asarray(PRESSURE_VOLTAGES), np.asarray(PRESSURE_VALUES) # turns voltage and kpa lists into np arrays
+    out = np.interp(v, lv, lk)  # linear interp for every voltage value find voltage and pressure values its in between
     lo, hi = v < lv[0], v > lv[-1]
-    out[lo] = lk[0] + (v[lo] - lv[0]) * (lk[1] - lk[0]) / (lv[1] - lv[0])
+    out[lo] = lk[0] + (v[lo] - lv[0]) * (lk[1] - lk[0]) / (lv[1] - lv[0]) # replaces values below 0.5 V by extending table
     out[hi] = lk[-1] + (v[hi] - lv[-1]) * (lk[-1] - lk[-2]) / (lv[-1] - lv[-2])
     return out
 
@@ -128,13 +101,12 @@ def load_esp(run_dir, meta):
 
 
 def tare_offsets(tare_dir):
-    """Mean gauge kPa per pressure channel with the engine stopped (should be 0)."""
+    # mean pressure 
     data, names, _, _ = load_lj(tare_dir)
     return {ch: float(np.mean(volts_to_kpa(data[:, names.index(ch)]))) for ch in PRESSURE_CHANNELS}
 
 
 def esp_value(esp, keys, t0, t1, pad=0.0):
-    """Median of the first ESP log type found in keys within [t0-pad, t1+pad], else NaN."""
     for k in keys:
         if k in esp:
             t, v = esp[k]
@@ -202,18 +174,18 @@ def cylinder_peaks(p_abs, fs, rpm):
     return peaks
 
 
-def analyze(run_dir, tare_dir=None, amb_override=None):
+def analyze(run_dir, tare_dir=None):
     data, names, fs, meta = load_lj(run_dir)
     esp = load_esp(run_dir, meta)
     offsets = tare_offsets(tare_dir) if tare_dir else {ch: 0.0 for ch in PRESSURE_CHANNELS}
     lj_t0 = float(meta.get("lj_t0", meta.get("pc_start_sent", 0.0)))
 
     # ambient pressure: per-window ESP value, falling back to the whole-run median
-    run_amb = amb_override
+    run_amb = None 
     if run_amb is None and "amb_P" in esp:
         run_amb = float(np.median(esp["amb_P"][1]))
     if run_amb is None:
-        fail("no ambient pressure: amb_P missing from esp.csv (BMP280?). Re-run with --amb-kpa <value>")
+        fail("no ambient pressure: amb_P missing from esp.csv")
     run_ambT = float(np.median(esp["amb_T"][1])) if "amb_T" in esp else float("nan")
 
     ckp_all = (data[:, names.index(CKP_CHANNEL)].astype(np.uint16) >> CKP_BIT) & 1
@@ -232,7 +204,7 @@ def analyze(run_dir, tare_dir=None, amb_override=None):
         if i1 - i0 < int(0.2 * fs):
             continue
         rpm, _ = window_rpm(ckp_all[i0:i1], fs)
-        amb = amb_override if amb_override is not None else esp_value(esp, ["amb_P"], w["t0"], w["t1"], pad=5.0)
+        amb = esp_value(esp, ["amb_P"], w["t0"], w["t1"], pad=5.0)
         if amb != amb:
             amb = run_amb
         row = {"step": w["step"], "t_start_s": round(w["t0"] - lj_t0, 3),
@@ -307,24 +279,27 @@ def heatmap(rows, mode, path, run_name, dead, tared):
         grid[yi, xs.index(x)] = np.mean([v for v, _ in vals])
         unsettled[yi, xs.index(x)] = any(s == 0 for _, s in vals)
 
-    fig, ax = plt.subplots(figsize=(max(6, 1.0 * len(xs) + 3), max(3.5, 0.6 * len(ys) + 2.5)))
-    cmap = plt.get_cmap("Blues").copy()
+    fig, ax = plt.subplots(figsize=(max(6, 0.8 * len(xs) + 3), max(3.5, 0.45 * len(ys) + 2.5)))
+    cmap = matplotlib.colors.LinearSegmentedColormap.from_list(   # tuner style: blue = low VE, red = high VE
+        "tuner", ["#1b2fbf", "#1f6fd6", "#1aa0b8", "#1e9a3c", "#6fae1e", "#e3b21b", "#e07a1c", "#d23a1c", "#b5121b"])
     cmap.set_bad("#e6e6e6")
     finite = grid[np.isfinite(grid)]
     vmin, vmax = (float(finite.min()), float(finite.max())) if finite.size else (0, 1)
     if vmax - vmin < 0.05:
         vmin, vmax = vmin - 0.025, vmax + 0.025
     im = ax.imshow(np.ma.masked_invalid(grid), cmap=cmap, vmin=vmin, vmax=vmax,
-                   origin="lower", aspect="auto")
+                   origin="lower", aspect="auto")   # 100% throttle at the top
+    for k in range(len(xs) - 1):
+        ax.axvline(k + 0.5, color="white", lw=1)
+    for k in range(len(ys) - 1):
+        ax.axhline(k + 0.5, color="white", lw=1)
     for yi in range(len(ys)):
         for xi in range(len(xs)):
             v = grid[yi, xi]
             if v != v:
                 continue
-            frac = (v - vmin) / (vmax - vmin)
-            ax.text(xi, yi, f"{v * 100:.0f}%" + ("*" if unsettled[yi, xi] else ""),
-                    ha="center", va="center", fontsize=9,
-                    color="white" if frac > 0.55 else "#1a1a1a")
+            ax.text(xi, yi, f"{v * 100:.1f}" + ("*" if unsettled[yi, xi] else ""),
+                    ha="center", va="center", fontsize=8, color="white", fontweight="bold")
     ax.set_xticks(range(len(xs)), [f"{x:.0f}" for x in xs])
     ax.set_yticks(range(len(ys)), [("n/a" if y != y else f"{y:.0f}") for y in ys])
     ax.set_xlabel("RPM" + (" (target)" if mode == "sweep" else " (measured, binned)"))
@@ -332,7 +307,7 @@ def heatmap(rows, mode, path, run_name, dead, tared):
     for s in ax.spines.values():
         s.set_visible(False)
     cb = fig.colorbar(im, ax=ax, fraction=0.04, pad=0.02)
-    cb.set_label("VE estimate")
+    cb.set_label("VE estimate (cells show VE %)")
     cb.ax.yaxis.set_major_formatter(matplotlib.ticker.PercentFormatter(1.0))
     cb.outline.set_visible(False)
     notes = [f"VE_est = (P_peak/P_amb) / CR^n, CR={COMPRESSION_RATIO}, n={POLYTROPIC_N}"]
@@ -380,12 +355,11 @@ def trace_plot(trace_pick, fs, path):
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("run", help="run folder (contains lj.bin)")
-    ap.add_argument("--tare", help="tare folder: engine stopped, sensors at atmosphere")
-    ap.add_argument("--amb-kpa", type=float, help="ambient pressure override, kPa absolute")
+    ap.add_argument("run", help="run folder (contains lj.bin)") # required
+    ap.add_argument("--tare", help="tare folder: engine stopped, sensors at atmosphere") # optional
     a = ap.parse_args()
 
-    rows, mode, dead, offsets, fs, trace_pick, run_amb, tared = analyze(a.run, a.tare, a.amb_kpa)
+    rows, mode, dead, offsets, fs, trace_pick, run_amb, tared = analyze(a.run, a.tare)
     run_name = os.path.basename(os.path.normpath(a.run))
     write_csv(rows, os.path.join(a.run, "results.csv"))
     trace_plot(trace_pick, fs, os.path.join(a.run, "traces.png"))

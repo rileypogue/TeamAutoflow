@@ -84,7 +84,7 @@ TeamAutoflow/
 │   ├── DAQ.py                 # LabJack T7 stream logger (background thread)
 │   ├── analyze_run.py         # VE analysis of a run folder
 │   ├── PID_controller/        # ESP32-C6 firmware: throttle control, RPM, ambient, serial protocol
-│   ├── throttle/              # <describe: e.g. standalone throttle body test sketch>
+│   ├── throttle/              # original throttle body code used to calibrate throttle 
 │   └── bmp_diag/              # BMP280 I2C diagnostic sketch
 └── data/
     ├── run_<MM-DD_HH-MM-SS>/  # one folder per run (<name>_<time> if a run name was set)
@@ -129,7 +129,7 @@ wiring, ~5-10 s (START → wait → STOP). Redo after rewiring or sensor swaps, 
 ## Analysis method (`analyze_run.py`)
 
 ```bash
-uv run python analyze_run.py ../data/<run folder> --tare ../data/<tare folder>   # --amb-kpa 81.7 if no BMP280 data
+uv run python analyze_run.py ../data/<run folder> --tare ../data/<tare folder>   
 ```
 
 The transducers are **gauge** sensors and can't read vacuum, so the script uses each cylinder's **peak motored
