@@ -27,6 +27,13 @@ MANUAL_WINDOW_S = 1.0           # slice length for runs without steps.csv
 RPM_BIN = 250                   # heatmap bins for manual runs
 THR_BIN = 10
 
+# MAP sensor (absolute, plumbed to the intake plenum downstream of the throttle plate) on AIN4.
+# EDIT the two calibration points from your sensor's datasheet (linear: volts -> kPa absolute).
+MAP_CHANNEL = "AIN4"
+MAP_CAL_V = (0.5, 4.5)
+MAP_CAL_KPA = (10.0, 105.0)
+MAP_BREAKPOINTS = [20, 30, 40, 50, 60, 70, 80]   # kPa abs rows of the VE table (ambient in Golden ~83 kPa)
+
 # pressure transducer LUT taken from RIFE sensor website 
 PRESSURE_VOLTAGES = [0.5, 0.629, 0.758, 0.887, 1.016, 1.145, 1.274, 1.403, 1.532, 1.661, 1.790,
                      1.919, 2.048, 2.177, 2.306, 2.435, 2.564, 2.693, 2.822, 2.951, 3.080, 3.209,
@@ -50,6 +57,11 @@ def volts_to_kpa(v):
     out[lo] = lk[0] + (v[lo] - lv[0]) * (lk[1] - lk[0]) / (lv[1] - lv[0]) # replaces values below 0.5 V by extending table
     out[hi] = lk[-1] + (v[hi] - lv[-1]) * (lk[-1] - lk[-2]) / (lv[-1] - lv[-2])
     return out
+
+def volts_to_map_kpa(v):
+    (v0, v1), (k0, k1) = MAP_CAL_V, MAP_CAL_KPA
+    return k0 + (np.asarray(v, dtype=float) - v0) * (k1 - k0) / (v1 - v0)
+
 
 def load_lj(run_dir):
     meta_path = os.path.join(run_dir, "meta.json")
@@ -192,6 +204,7 @@ def analyze(run_dir, tare_dir=None):
     gauge = {ch: volts_to_kpa(data[:, names.index(ch)]) - offsets[ch] for ch in PRESSURE_CHANNELS}
     mean_v = {ch: float(np.mean(data[:, names.index(ch)])) for ch in PRESSURE_CHANNELS}
     dead = [ch for ch in PRESSURE_CHANNELS if mean_v[ch] < DEAD_CHANNEL_V]
+    map_all = volts_to_map_kpa(data[:, names.index(MAP_CHANNEL)]) if MAP_CHANNEL in names else None
 
     windows, mode = build_windows(run_dir, meta, len(data), fs, esp)
     if not windows:
@@ -210,8 +223,9 @@ def analyze(run_dir, tare_dir=None):
         row = {"step": w["step"], "t_start_s": round(w["t0"] - lj_t0, 3),
                "duration_s": round((i1 - i0) / fs, 3), "rpm_target": w["rpm_target"],
                "rpm_meas": rpm, "throttle_pct": w["throttle"], "settled": w["settled"],
-               "amb_kpa": amb, "amb_C": run_ambT}
-        ves, peak_sets = [], {}
+               "amb_kpa": amb, "amb_C": run_ambT,
+               "map_kpa": float(np.median(map_all[i0:i1])) if map_all is not None else np.nan}
+        ves, ves_map, peak_sets = [], [], {}
         for ch, cyl in zip(PRESSURE_CHANNELS, CYL_NAMES):
             if ch in dead:
                 row.update({f"{cyl}_peak_kpa_abs": np.nan, f"{cyl}_PR": np.nan,
@@ -227,9 +241,12 @@ def analyze(run_dir, tare_dir=None):
                 pr = pk / amb
                 ve = pr / FULL_CHARGE_PR
                 ves.append(ve)
+                if row["map_kpa"] == row["map_kpa"]:
+                    ves_map.append(pk / row["map_kpa"] / FULL_CHARGE_PR)   # speed-density VE (vs. MAP)
             row.update({f"{cyl}_peak_kpa_abs": pk, f"{cyl}_PR": pr,
                         f"{cyl}_VE": ve, f"{cyl}_cycles": len(peaks)})
-        row["VE_mean"] = float(np.mean(ves)) if ves else np.nan
+        row["VE_mean"] = float(np.mean(ves)) if ves else np.nan            # vs. ambient (includes throttle loss)
+        row["VE_map"] = float(np.mean(ves_map)) if ves_map else np.nan     # vs. MAP (what an ECU VE table uses)
         rows.append(row)
         # trace plot: the highest-RPM window that found peaks
         if peak_sets and rpm == rpm and (trace_pick is None or rpm > trace_pick[0]):
@@ -324,6 +341,73 @@ def heatmap(rows, mode, path, run_name, dead, tared):
     plt.close(fig)
 
 
+def heatmap_map(rows, mode, path, run_name, dead, tared):
+    """RPM x MAP table of speed-density VE. Each RPM column is interpolated between the measured
+    sweep steps onto MAP_BREAKPOINTS; cells outside the measured MAP range stay blank."""
+    if mode == "sweep":
+        rpm_key = lambda r: r["rpm_target"]
+    else:
+        rpm_key = lambda r: (round(r["rpm_meas"] / RPM_BIN) * RPM_BIN) if r["rpm_meas"] == r["rpm_meas"] else np.nan
+    cols = {}
+    for r in rows:
+        x, m, v = rpm_key(r), r["map_kpa"], r["VE_map"]
+        if x == x and m == m and v == v:
+            cols.setdefault(x, []).append((m, v))
+    if not cols:
+        fail("no VE values to plot vs. MAP. Check results.csv")
+    xs = sorted(cols)
+    ys = MAP_BREAKPOINTS
+    grid = np.full((len(ys), len(xs)), np.nan)
+    for xi, x in enumerate(xs):
+        pts = sorted(cols[x])
+        m = np.array([p[0] for p in pts]); v = np.array([p[1] for p in pts])
+        for yi, y in enumerate(ys):
+            if m.size >= 2 and m[0] - 2.0 <= y <= m[-1] + 2.0:      # no extrapolation past measured MAP
+                grid[yi, xi] = np.interp(y, m, v)
+            elif m.size == 1 and abs(m[0] - y) <= 5.0:
+                grid[yi, xi] = v[0]
+
+    fig, ax = plt.subplots(figsize=(max(6, 0.8 * len(xs) + 3), max(3.5, 0.45 * len(ys) + 2.5)))
+    cmap = matplotlib.colors.LinearSegmentedColormap.from_list(   # tuner style: blue = low VE, red = high VE
+        "tuner", ["#1b2fbf", "#1f6fd6", "#1aa0b8", "#1e9a3c", "#6fae1e", "#e3b21b", "#e07a1c", "#d23a1c", "#b5121b"])
+    cmap.set_bad("#e6e6e6")
+    finite = grid[np.isfinite(grid)]
+    vmin, vmax = (float(finite.min()), float(finite.max())) if finite.size else (0, 1)
+    if vmax - vmin < 0.05:
+        vmin, vmax = vmin - 0.025, vmax + 0.025
+    im = ax.imshow(np.ma.masked_invalid(grid), cmap=cmap, vmin=vmin, vmax=vmax, origin="lower", aspect="auto")
+    for k in range(len(xs) - 1):
+        ax.axvline(k + 0.5, color="white", lw=1)
+    for k in range(len(ys) - 1):
+        ax.axhline(k + 0.5, color="white", lw=1)
+    for yi in range(len(ys)):
+        for xi in range(len(xs)):
+            v = grid[yi, xi]
+            if v == v:
+                ax.text(xi, yi, f"{v * 100:.1f}", ha="center", va="center", fontsize=8,
+                        color="white", fontweight="bold")
+    ax.set_xticks(range(len(xs)), [f"{x:.0f}" for x in xs])
+    ax.set_yticks(range(len(ys)), [f"{y:.0f}" for y in ys])
+    ax.set_xlabel("RPM" + (" (target)" if mode == "sweep" else " (measured, binned)"))
+    ax.set_ylabel("Manifold pressure (kPa abs)")
+    for s in ax.spines.values():
+        s.set_visible(False)
+    cb = fig.colorbar(im, ax=ax, fraction=0.04, pad=0.02)
+    cb.set_label("VE (cells show VE %)")
+    cb.ax.yaxis.set_major_formatter(matplotlib.ticker.PercentFormatter(1.0))
+    cb.outline.set_visible(False)
+    notes = [f"VE = (P_peak/MAP) / CR^n, CR={COMPRESSION_RATIO}, n={POLYTROPIC_N}; "
+             "interpolated between sweep steps, gray = outside measured MAP"]
+    if not tared:
+        notes.append("NO TARE")
+    if dead:
+        notes.append("ignored (no signal): " + ", ".join(dead))
+    ax.set_title(f"{run_name}: VE table (mean of cylinders)\n" + "\n".join(notes), fontsize=9, loc="left")
+    fig.tight_layout()
+    fig.savefig(path, dpi=150)
+    plt.close(fig)
+
+
 def trace_plot(trace_pick, fs, path):
     """Small multiples: one panel per cylinder (+ CKP), 0.25 s of the highest-RPM window."""
     if trace_pick is None:
@@ -363,7 +447,10 @@ def main():
     run_name = os.path.basename(os.path.normpath(a.run))
     write_csv(rows, os.path.join(a.run, "results.csv"))
     trace_plot(trace_pick, fs, os.path.join(a.run, "traces.png"))
-    heatmap(rows, mode, os.path.join(a.run, "ve_heatmap.png"), run_name, dead, tared)
+    if any(r["map_kpa"] == r["map_kpa"] for r in rows):     # MAP logged -> RPM x MAP table
+        heatmap_map(rows, mode, os.path.join(a.run, "ve_heatmap.png"), run_name, dead, tared)
+    else:                                                  # older runs without AIN4 -> RPM x throttle
+        heatmap(rows, mode, os.path.join(a.run, "ve_heatmap.png"), run_name, dead, tared)
 
     print(f"{run_name}: {mode} run, {len(rows)} windows, fs={fs:.0f} Hz, ambient {run_amb:.2f} kPa")
     if tared:
@@ -371,12 +458,12 @@ def main():
     if dead:
         print("WARNING: no signal on " + ", ".join(dead) + " (mean below "
               f"{DEAD_CHANNEL_V} V) - those cylinders were skipped")
-    print(f"{'step':>4} {'rpm_tgt':>8} {'rpm':>7} {'thr%':>5} {'VE_mean':>8}  cycles/cyl")
+    print(f"{'step':>4} {'rpm_tgt':>8} {'rpm':>7} {'thr%':>5} {'MAP':>6} {'VE_mean':>8}  cycles/cyl")
     for r in rows:
         cyc = "/".join(str(r[f"{c}_cycles"]) for c in CYL_NAMES)
         fmt = lambda v, f: ("--" if v != v else format(v, f))
         print(f"{r['step']:>4} {fmt(r['rpm_target'], '.0f'):>8} {fmt(r['rpm_meas'], '.0f'):>7} "
-              f"{fmt(r['throttle_pct'], '.0f'):>5} {fmt(r['VE_mean'] * 100, '.1f'):>7}%  {cyc}"
+              f"{fmt(r['throttle_pct'], '.0f'):>5} {fmt(r['map_kpa'], '.1f'):>6} {fmt(r['VE_mean'] * 100, '.1f'):>7}%  {cyc}"
               + ("" if r["settled"] else "  (not settled)"))
 
 
